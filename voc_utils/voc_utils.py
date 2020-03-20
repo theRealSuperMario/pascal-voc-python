@@ -11,7 +11,7 @@ from skimage import io
 class PascalVOCDataset:
     def __init__(self, root_dir):
         self.root_dir = root_dir
-        self.img_dir = os.path.join(root_dir, "JPEGImages/")
+        self.img_dir = os.path.join(root_dir, "JPEGImages")
         self.ann_dir = os.path.join(root_dir, "Annotations")
         self.set_dir = os.path.join(root_dir, "ImageSets", "Main")
 
@@ -45,7 +45,7 @@ class PascalVOCDataset:
 
     def imgs_from_category(self, cat_name, dataset):
         """
-        Summary
+        Get a list of filenames for images in a particular category as a pandas dataframe.
 
         Args:
             cat_name (string): Category name as a string (from list_image_sets())
@@ -102,7 +102,7 @@ class PascalVOCDataset:
                 BeautifulSoup data structure
         """
         xml = ""
-        with open(annotation_file_from_img(img_filename)) as f:
+        with open(self.annotation_file_from_img(img_filename)) as f:
             xml = f.readlines()
         xml = "".join([line.strip("\t") for line in xml])
         return BeautifulSoup(xml)
@@ -112,7 +112,7 @@ class PascalVOCDataset:
         img_list = self.imgs_from_category_as_list(objname, img_set)
 
         for img in img_list:
-            annotation = load_annotation(img)
+            annotation = self.load_annotation(img)
 
     def load_img(self, img_filename):
         """
@@ -163,18 +163,18 @@ class PascalVOCDataset:
             pandas DataFrame: df of filenames and bounding boxes
         """
         if data_type is None:
-            raise ValueError("Must provide data_type = train or val")
-        to_find = category
+            raise ValueError("Must provide data_type = `train` or `val`")
         filename = (
             os.path.join(self.root_dir, "csvs/") + data_type + "_" + category + ".csv"
         )
         if os.path.isfile(filename):
             return pd.read_csv(filename)
         else:
-            train_img_list = imgs_from_category_as_list(to_find, data_type)
+            # Make data and then return them
+            train_img_list = self.imgs_from_category_as_list(category, data_type)
             data = []
             for item in train_img_list:
-                anno = load_annotation(item)
+                anno = self.load_annotation(item)
                 objs = anno.findAll("object")
                 for obj in objs:
                     obj_names = obj.findChildren("name")
