@@ -9,13 +9,15 @@ from skimage import io
 
 
 class PascalVOCDataset:
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
-        self.img_dir = os.path.join(root_dir, "JPEGImages")
-        self.ann_dir = os.path.join(root_dir, "Annotations")
-        self.set_dir = os.path.join(root_dir, "ImageSets", "Main")
+    def __init__(self, dir_VOC_root, dir_pascal_csv):
+        self.dir_VOC_root = dir_VOC_root
+        self.dir_pascal_csv = dir_pascal_csv
+        self.dir_JPEGImages = os.path.join(dir_VOC_root, "JPEGImages")
+        self.dir_Annotations = os.path.join(dir_VOC_root, "Annotations")
+        self.dir_ImageSetsMain = os.path.join(dir_VOC_root, "ImageSets", "Main")
 
-    def list_image_sets(self):
+    @staticmethod
+    def list_image_sets():
         """
         List all the image sets from Pascal VOC. Don't bother computing
         this on the fly, just remember it. It's faster.
@@ -43,6 +45,10 @@ class PascalVOCDataset:
             "tvmonitor",
         ]
 
+    @staticmethod
+    def SPLITS():
+        return ["train", "val"]
+
     def imgs_from_category(self, cat_name, dataset):
         """
         Get a list of filenames for images in a particular category as a pandas dataframe.
@@ -54,7 +60,9 @@ class PascalVOCDataset:
         Returns:
             pandas dataframe: pandas DataFrame of all filenames from that category
         """
-        filename = os.path.join(self.set_dir, cat_name + "_" + dataset + ".txt")
+        filename = os.path.join(
+            self.dir_ImageSetsMain, cat_name + "_" + dataset + ".txt"
+        )
         df = pd.read_csv(
             filename, delim_whitespace=True, header=None, names=["filename", "true"]
         )
@@ -87,7 +95,7 @@ class PascalVOCDataset:
         Returns:
             string: file path to the annotation file
         """
-        return os.path.join(self.ann_dir, img_name) + ".xml"
+        return os.path.join(self.dir_Annotations, img_name) + ".xml"
 
     def load_annotation(self, img_filename):
         """
@@ -126,7 +134,7 @@ class PascalVOCDataset:
         Returns:
             np array of float32: an image as a numpy array of float32
         """
-        img_filename = os.path.join(self.img_dir, img_filename + ".jpg")
+        img_filename = os.path.join(self.dir_JPEGImages, img_filename + ".jpg")
         img = skimage.img_as_float(io.imread(img_filename)).astype(np.float32)
         if img.ndim == 2:
             img = img[:, :, np.newaxis]
@@ -164,32 +172,39 @@ class PascalVOCDataset:
         """
         if data_type is None:
             raise ValueError("Must provide data_type = `train` or `val`")
-        filename = (
-            os.path.join(self.root_dir, "csvs/") + data_type + "_" + category + ".csv"
+        filename = os.path.join(
+            self.dir_pascal_csv, data_type + "_" + category + ".csv"
         )
         if os.path.isfile(filename):
             return pd.read_csv(filename)
         else:
+            import pudb
+
+            pudb.set_trace()
             # Make data and then return them
-            train_img_list = self.imgs_from_category_as_list(category, data_type)
-            data = []
-            for item in train_img_list:
-                anno = self.load_annotation(item)
-                objs = anno.findAll("object")
-                for obj in objs:
-                    obj_names = obj.findChildren("name")
-                    for name_tag in obj_names:
-                        if str(name_tag.contents[0]) == category:
-                            fname = anno.findChild("filename").contents[0]
-                            bbox = obj.findChildren("bndbox")[0]
-                            xmin = int(bbox.findChildren("xmin")[0].contents[0])
-                            ymin = int(bbox.findChildren("ymin")[0].contents[0])
-                            xmax = int(bbox.findChildren("xmax")[0].contents[0])
-                            ymax = int(bbox.findChildren("ymax")[0].contents[0])
-                            data.append([fname, xmin, ymin, xmax, ymax])
-            df = pd.DataFrame(data, columns=["fname", "xmin", "ymin", "xmax", "ymax"])
-            df.to_csv(filename)
+            df = self._make_data(category, data_type, filename)
             return df
+
+    def _make_data(self, category, data_type, filename):
+        train_img_list = self.imgs_from_category_as_list(category, data_type)
+        data = []
+        for item in train_img_list:
+            anno = self.load_annotation(item)
+            objs = anno.findAll("object")
+            for obj in objs:
+                obj_names = obj.findChildren("name")
+                for name_tag in obj_names:
+                    if str(name_tag.contents[0]) == category:
+                        fname = anno.findChild("filename").contents[0]
+                        bbox = obj.findChildren("bndbox")[0]
+                        xmin = int(bbox.findChildren("xmin")[0].contents[0])
+                        ymin = int(bbox.findChildren("ymin")[0].contents[0])
+                        xmax = int(bbox.findChildren("xmax")[0].contents[0])
+                        ymax = int(bbox.findChildren("ymax")[0].contents[0])
+                        data.append([fname, xmin, ymin, xmax, ymax])
+        df = pd.DataFrame(data, columns=["fname", "xmin", "ymin", "xmax", "ymax"])
+        df.to_csv(filename)
+        return df
 
     def get_image_url_list(self, category, data_type=None):
         """
@@ -203,7 +218,7 @@ class PascalVOCDataset:
             list of strings: list of all filenames for that particular category
         """
         df = self._load_data(category, data_type=data_type)
-        image_url_list = list(unique_everseen(list(self.img_dir + df["fname"])))
+        image_url_list = list(unique_everseen(list(self.dir_JPEGImages + df["fname"])))
         return image_url_list
 
     def get_masks(self, cat_name, data_type, mask_type=None):
@@ -236,7 +251,7 @@ class PascalVOCDataset:
         prev_url = ""
         blank_img = None
         for row_num, entry in df.iterrows():
-            img_url = os.path.join(self.img_dir, entry["fname"])
+            img_url = os.path.join(self.dir_JPEGImages, entry["fname"])
             if img_url != prev_url:
                 if blank_img is not None:
                     # TODO: options for how to process the masks
@@ -373,7 +388,7 @@ class PascalVOCDataset:
         """
         if data_type is None:
             raise ValueError("Must provide data_type = train or val")
-        filename = os.path.join(self.set_dir, data_type + ".txt")
+        filename = os.path.join(self.dir_ImageSetsMain, data_type + ".txt")
         cat_list = self.list_image_sets()
         df = pd.read_csv(
             filename, delim_whitespace=True, header=None, names=["filename"]
